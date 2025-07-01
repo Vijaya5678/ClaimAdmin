@@ -1,0 +1,56 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+*.env
+
+# Environment & API keys
+.env
+.env.*
+
+# VS Code / IDEs
+.vscode/
+.idea/
+*.code-workspace
+
+# Jupyter/IPython
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Streamlit cache
+.streamlit/
+
+# Logs
+*.log
+
+
+
+# Compiled files
+*.exe
+*.dll
+*.out
+*.app
+
+# Coverage reports
+htmlcov/
+.tox/
+.nox/
+coverage.*
+.cache
+.pytest_cache/
+
+# Misc
+*.bak
+*.swp
+*~
