@@ -21,45 +21,37 @@ query_handler = PolicyQueryHandler()
 doc_query_handler = PolicyDocQuery()
 
 # === Streamlit Page Config ===
-st.set_page_config(page_title="Claim Approver Assistant", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Claim Approver Assistant", layout="centered")
 
 # === Custom Styles ===
 st.markdown("""
     <style>
-        .main {
-            background-color: #f8f9fa;
-        }
-        .stChatMessage {
-            padding: 10px 18px;
-            margin-bottom: 12px;
-            border-radius: 12px;
-        }
         .stChatMessage.user {
-            background-color: #e3f2fd;
+            background-color: #DCF8C6 !important;
+            border-radius: 10px !important;
+            margin-left: auto !important;
+            margin-right: 0 !important;
+            max-width: 75%;
         }
         .stChatMessage.assistant {
-            background-color: #f1f3f4;
+            background-color: #F1F0F0 !important;
+            border-radius: 10px !important;
+            margin-right: auto !important;
+            margin-left: 0 !important;
+            max-width: 75%;
         }
-        .option-box {
-            padding: 10px;
-            background-color: #e8f0fe;
-            border-radius: 8px;
-            margin-top: 12px;
-            font-size: 15px;
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
         }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 style='color:#1a73e8;'>🤖 Claim Approver Assistant</h1>", unsafe_allow_html=True)
-
-# === Session State Init ===
+# === Session State ===
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant",
-        "content": "Hello! I’m your Claim Approver Assistant.\n\nWhat would you like to do?\n\n"
-                   "1. Know about a specific policy (enter policy number)\n"
-                   "2. Ask about policies in general\n\n"
-                   "Type the option number (1, 2, or 3) or type `exit` to end at any time."
+        "content": "Hello! 👋 I'm your Claim Approver Assistant.\n\nPlease enter your policy number to begin."
     }]
 if "mode" not in st.session_state:
     st.session_state.mode = None
@@ -80,12 +72,10 @@ def show_main_options():
         "Type the option number (1, 2, or 3) or type `back` to return to the main menu."
     )
 
-
-# === Core Handlers ===
+# === Chat Handlers ===
 def handle_policy_menu(option):
     if option == "1":
         policy_summary, claims_summary = get_policy_and_claim_summary(st.session_state.policy_id)
-
         reply = (
             f"**Policy Summary**\n"
             f"- **Policy Holder:** {policy_summary['policy_holder']}\n"
@@ -94,7 +84,6 @@ def handle_policy_menu(option):
             f"- **Remaining:** ₹{policy_summary['remaining_amount']}\n"
             f"- **Eligible Conditions:** {', '.join(policy_summary['eligible_diseases'])}\n\n"
         )
-
         if claims_summary["claims"]:
             table_header = "| Claim ID | Status | Amount Paid (₹) |\n|----------|--------|------------------|"
             table_rows = [
@@ -104,14 +93,14 @@ def handle_policy_menu(option):
             claims_table = "\n".join([table_header] + table_rows)
             reply += f"**Claim History:**\n{claims_table}"
         else:
-            reply += "ℹNo claims found for this policy."
+            reply += "ℹ️ No claims found for this policy."
 
     elif option == "2":
-        reply = "A support ticket has been created. Our team will get back to you shortly."
+        reply = "✅ A support ticket has been created. Our team will get back to you shortly."
 
     elif option == "3":
         st.session_state.doc_mode = True
-        reply = "You can now ask questions about your uploaded documents (e.g., medical bills, reports)."
+        reply = "📄 You can now ask questions about your uploaded documents (e.g., medical bills, reports)."
 
     elif option.lower() == "back":
         st.session_state.mode = None
@@ -122,70 +111,94 @@ def handle_policy_menu(option):
     else:
         reply = "⚠️ Invalid selection. Please choose 1, 2, 3 or type `back`."
 
-    st.session_state.messages.append({"role": "assistant", "content": reply})
-
-
+    return reply
 
 def handle_general_query(query):
     result = query_handler.get_response(query)
-    st.session_state.messages.append({"role": "assistant", "content": result})
-    st.session_state.messages.append({"role": "assistant", "content": "_(Type 'back' to return to main menu.)_"})
-
+    return result
 
 def handle_uploaded_doc_query(user_input):
     response = doc_query_handler.query(policy_id=st.session_state.policy_id, question=user_input)
-    st.session_state.messages.append({"role": "assistant", "content": response})
-    st.session_state.messages.append({"role": "assistant", "content": "_Ask another question or type `back`._"})
+    return response
 
-# === User Input ===
-user_input = st.chat_input("Type your message here...")
+# === UI Title ===
+st.title("🤖 Claim Approver Assistant")
 
-if user_input:
+# === Chat History Display ===
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# === Chat Input Handler ===
+if user_input := st.chat_input("Type your message here..."):
     user_input = user_input.strip()
+    
+    # Add user message to chat
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+    # Handle exit
     if user_input.lower() == "exit":
         st.session_state.clear()
         st.success("👋 Session ended. Thank you for using Claim Approver Assistant.")
         st.stop()
 
-    st.session_state.messages.append({"role": "user", "content": user_input})
-
+    # Process user input and generate response
+    assistant_response = None
+    
     if st.session_state.doc_mode:
         if user_input.lower() == "back":
             st.session_state.doc_mode = False
-            st.session_state.messages.append({"role": "assistant", "content": show_main_options()})
+            assistant_response = show_main_options()
         else:
-            handle_uploaded_doc_query(user_input)
+            assistant_response = handle_uploaded_doc_query(user_input)
+            # Add additional message for doc mode
+            st.session_state.messages.append({"role": "assistant", "content": assistant_response})
+            with st.chat_message("assistant"):
+                st.markdown(assistant_response)
+            assistant_response = "_Ask another question or type `back`._"
 
     elif st.session_state.mode is None:
-        if user_input == "1":
-            st.session_state.mode = "policy"
-            st.session_state.messages.append({"role": "assistant", "content": "Please enter the policy number:"})
-        elif user_input == "2":
-            st.session_state.mode = "general"
-            st.session_state.messages.append({"role": "assistant", "content": "Ask me anything about the insurance policies."})
-        else:
-            st.session_state.messages.append({"role": "assistant", "content": "Please choose either `1` or `2` to proceed."})
-
-    elif st.session_state.mode == "policy":
         if not st.session_state.policy_verified:
             result = get_policy_and_claim_summary(user_input)
             if isinstance(result, dict) and "error" in result:
-                st.session_state.messages.append({"role": "assistant", "content": f"❌ {result['error']}. Please try again."})
+                assistant_response = f"❌ {result['error']}. Please try again."
             else:
                 st.session_state.policy_verified = True
                 st.session_state.policy_id = user_input
+                # Add verification message
                 st.session_state.messages.append({"role": "assistant", "content": f"✅ Policy `{user_input}` verified."})
-                st.session_state.messages.append({"role": "assistant", "content": show_main_options()})
+                with st.chat_message("assistant"):
+                    st.markdown(f"✅ Policy `{user_input}` verified.")
+                assistant_response = show_main_options()
         else:
-            handle_policy_menu(user_input)
+            assistant_response = handle_policy_menu(user_input)
+
+    elif st.session_state.mode == "policy":
+        assistant_response = handle_policy_menu(user_input)
 
     elif st.session_state.mode == "general":
         if user_input.lower() == "back":
             st.session_state.mode = None
-            st.session_state.messages.append({"role": "assistant", "content": st.session_state.messages[0]["content"]})
+            assistant_response = st.session_state.messages[0]["content"]
         else:
-            handle_general_query(user_input)
+            assistant_response = handle_general_query(user_input)
+            # Add additional message for general mode
+            st.session_state.messages.append({"role": "assistant", "content": assistant_response})
+            with st.chat_message("assistant"):
+                st.markdown(assistant_response)
+            assistant_response = "_(Type 'back' to return to main menu.)_"
 
-# === Chat UI ===
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).markdown(msg["content"])
+    # Add assistant response to chat
+    if assistant_response:
+        st.session_state.messages.append({"role": "assistant", "content": assistant_response})
+        with st.chat_message("assistant"):
+            st.markdown(assistant_response)
+
+# # === Optional: Policy Comparison Q&A ===
+# with st.expander("🛠 General Policy Comparison", expanded=False):
+#     general_query = st.text_input("Ask about policies:", key="general_query")
+#     if general_query:
+#         general_response = query_handler.get_response(general_query)
+#         st.markdown(f"**Response:**\n\n{general_response}")
