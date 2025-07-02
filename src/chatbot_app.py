@@ -13,7 +13,7 @@ import google.generativeai as genai
 
 from helpers.get_policy_and_claim_summary import get_policy_and_claim_summary
 from helpers.query_handler import PolicyQueryHandler
-from query_user_policy_doc import PolicyDocQuery
+from helpers    .query_user_policy_doc import PolicyDocQuery
 
 # === Configure Gemini ===
 os.environ["GEMINI_API_KEY"] = "AIzaSyBKMV8TARxNEOnTvA4sviV1wEb0uZA9pv4"
@@ -23,14 +23,14 @@ query_handler = PolicyQueryHandler()
 doc_query_handler = PolicyDocQuery()
 
 # === Streamlit UI Setup ===
-st.set_page_config(page_title="Claim Admin Assistant", layout="centered")
-st.markdown("<h1 style='color:#1a73e8;'>💬 Claim Admin Assistant</h1>", unsafe_allow_html=True)
+st.set_page_config(page_title="Claim Approver Assistant", layout="centered")
+st.markdown("<h1 style='color:#1a73e8;'>💬 Claim Approver Assistant</h1>", unsafe_allow_html=True)
 
 # === Session State Init ===
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant",
-        "content": "Hello! I’m your Claim Admin Assistant.\n\nWhat would you like to do?\n\n"
+        "content": "Hello! I’m your Claim Approver Assistant.\n\nWhat would you like to do?\n\n"
                    "1. Know about a specific policy (enter policy number)\n"
                    "2. Ask about policies in general\n\n"
                    "Select your option:\n_(Type 'exit' to end at any time.)_"
