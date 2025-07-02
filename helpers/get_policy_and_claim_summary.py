@@ -1,7 +1,9 @@
 from pymongo import MongoClient
+from dotenv import load_dotenv
+import os
 
 def get_policy_and_claim_summary(policy_id):
-    client = MongoClient("mongodb+srv://vijayapathak1996:q7omYcpNRndtC5EC@cluster0.zlpencf.mongodb.net/")
+    client = MongoClient(os.getenv("MONGO_URL"))
     db = client.claim_db
     policies_col = db.policies
     policy_types_col = db.policy_types

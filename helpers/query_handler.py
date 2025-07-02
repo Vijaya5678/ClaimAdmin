@@ -3,6 +3,7 @@ import numpy as np
 from langchain_community.vectorstores import Chroma
 from langchain.embeddings import HuggingFaceEmbeddings
 import google.generativeai as genai
+from dotenv import load_dotenv
 
 # Set Gemini API key from environment variable
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))

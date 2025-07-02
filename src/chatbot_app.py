@@ -3,7 +3,7 @@ import sys
 import streamlit as st
 from pymongo import MongoClient
 import google.generativeai as genai
-
+from dotenv import load_dotenv
 # === Path Setup ===
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "helpers"))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -13,192 +13,228 @@ from helpers.query_handler import PolicyQueryHandler
 from helpers.query_user_policy_doc import PolicyDocQuery
 
 # === Configure Gemini API ===
-os.environ["GEMINI_API_KEY"] = "AIzaSyBKMV8TARxNEOnTvA4sviV1wEb0uZA9pv4"
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # === Handlers ===
 query_handler = PolicyQueryHandler()
 doc_query_handler = PolicyDocQuery()
 
 # === Streamlit Page Config ===
-st.set_page_config(page_title="Claim Approver Assistant", layout="centered")
+st.set_page_config(
+    page_title="Claim Approval Assistant",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-# === Custom Styles ===
+# === Custom Styles with fix for top padding removal ===
 st.markdown("""
     <style>
-        .stChatMessage.user {
-            background-color: #DCF8C6 !important;
-            border-radius: 10px !important;
-            margin-left: auto !important;
-            margin-right: 0 !important;
-            max-width: 75%;
-        }
-        .stChatMessage.assistant {
-            background-color: #F1F0F0 !important;
-            border-radius: 10px !important;
-            margin-right: auto !important;
-            margin-left: 0 !important;
-            max-width: 75%;
-        }
+        /* Remove default Streamlit top padding to push content to top */
         .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
+            padding-top: 0rem !important;
         }
+
+        .stApp { background-color: #fafafa; }
+
+        .main-header {
+            background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
+            color: white;
+            padding: 1.25rem 2rem;
+            border-radius: 10px;
+            margin-top: 0rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .main-header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 600;
+        }
+
+        .main-header p {
+            margin: 0.5rem 0 0 0;
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .stChatMessage.user::before {
+            content: url('https://cdn-icons-png.flaticon.com/512/847/847969.png');
+            width: 32px; height: 32px; display: inline-block; margin-right: 0.75rem;
+            vertical-align: middle;
+        }
+
+        .stChatMessage.assistant::before {
+            content: url('https://cdn-icons-png.flaticon.com/512/4712/4712109.png');
+            width: 32px; height: 32px; display: inline-block; margin-right: 0.75rem;
+            vertical-align: middle;
+        }
+
+        .stChatMessage {
+            border-radius: 12px;
+            margin: 1rem 0;
+            padding: 1rem;
+            display: flex;
+            align-items: flex-start;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+            max-width: 800px;
+        }
+
+        .stChatMessage.user {
+            background-color: #eff6ff !important;
+            border: 1px solid #dbeafe !important;
+            margin-left: auto;
+        }
+
+        .stChatMessage.assistant {
+            background-color: white !important;
+            border: 1px solid #e5e7eb !important;
+            margin-right: auto;
+        }
+
+        #MainMenu, footer, header { visibility: hidden; }
     </style>
 """, unsafe_allow_html=True)
 
-# === Session State ===
-if "messages" not in st.session_state:
-    st.session_state.messages = [{
-        "role": "assistant",
-        "content": "Hello! 👋 I'm your Claim Approver Assistant.\n\nPlease enter your policy number to begin."
-    }]
-if "mode" not in st.session_state:
-    st.session_state.mode = None
-if "policy_verified" not in st.session_state:
-    st.session_state.policy_verified = False
-if "policy_id" not in st.session_state:
-    st.session_state.policy_id = None
-if "doc_mode" not in st.session_state:
-    st.session_state.doc_mode = False
+# === Session Initialization ===
+def initialize_session_state():
+    if "claim_messages" not in st.session_state:
+        st.session_state.claim_messages = [{"role": "assistant", "content": "Welcome to the Claim Assistant.\nPlease enter the policy number to begin."}]
+    if "general_messages" not in st.session_state:
+        st.session_state.general_messages = [{"role": "assistant", "content": "Welcome to General Policy Support. How can I help you today?"}]
+    if "policy_verified" not in st.session_state:
+        st.session_state.policy_verified = False
+    if "policy_id" not in st.session_state:
+        st.session_state.policy_id = None
+    if "doc_mode" not in st.session_state:
+        st.session_state.doc_mode = False
 
-# === Utility ===
+initialize_session_state()
+
+# === Header ===
+st.markdown("""
+    <div class="main-header">
+        <h1>Claim Approval Assistant</h1>
+        <p>Streamlining Insurance Claim Approvals</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# === Utility Functions ===
 def show_main_options():
-    return (
-        "Please choose an option:\n"
-        "1. View Policy and Claim Details\n"
-        "2. Raise a Support Ticket\n"
-        "3. Ask about Uploaded Documents\n\n"
-        "Type the option number (1, 2, or 3) or type `back` to return to the main menu."
-    )
+    return ("Please select an option:\n\n"
+            "\n**1.** View Policy and Claim Details\n"
+            "\n**2.** Raise a Support Ticket\n"
+            "\n**3.** Ask about Uploaded Documents\n\n"
+            "Enter the option number (1, 2, or 3) or type 'reset' to start over.")
 
-# === Chat Handlers ===
 def handle_policy_menu(option):
     if option == "1":
         policy_summary, claims_summary = get_policy_and_claim_summary(st.session_state.policy_id)
         reply = (
-            f"**Policy Summary**\n"
-            f"- **Policy Holder:** {policy_summary['policy_holder']}\n"
-            f"- **Total Coverage:** ₹{policy_summary['total_insured_amount']}\n"
-            f"- **Used Amount:** ₹{policy_summary['used_amount']}\n"
-            f"- **Remaining:** ₹{policy_summary['remaining_amount']}\n"
-            f"- **Eligible Conditions:** {', '.join(policy_summary['eligible_diseases'])}\n\n"
+            "#### Policy Summary\n\n"
+            f"**Policy Holder:** {policy_summary['policy_holder']}\n\n"
+            f"**Total Coverage:** ₹{policy_summary['total_insured_amount']:,}\n\n"
+            f"**Used Amount:** ₹{policy_summary['used_amount']:,}\n\n"
+            f"**Remaining:** ₹{policy_summary['remaining_amount']:,}\n\n"
+            f"**Eligible Conditions:** {', '.join(policy_summary['eligible_diseases'])}\n\n"
         )
         if claims_summary["claims"]:
-            table_header = "| Claim ID | Status | Amount Paid (₹) |\n|----------|--------|------------------|"
-            table_rows = [
-                f"| `{c['claim_id']}` | {c['claim_status']} | ₹{c['amount_paid']} |"
-                for c in claims_summary["claims"]
-            ]
-            claims_table = "\n".join([table_header] + table_rows)
-            reply += f"**Claim History:**\n{claims_table}"
+            reply += "#### Claim History\n\n"
+            reply += "| Claim ID | Status | Amount Paid |\n"
+            reply += "|----------|--------|-------------|\n"
+            for claim in claims_summary["claims"]:
+                reply += f"| {claim['claim_id']} | {claim['claim_status']} | ₹{claim['amount_paid']:,} |\n"
+            reply += "\n"
+
         else:
-            reply += "ℹ️ No claims found for this policy."
-
+            reply += "#### Claim History\n\nNo claims found for this policy."
     elif option == "2":
-        reply = "✅ A support ticket has been created. Our team will get back to you shortly."
-
+        reply = "**Support ticket created successfully.** Our team will contact you within 24 hours."
     elif option == "3":
         st.session_state.doc_mode = True
-        reply = "📄 You can now ask questions about your uploaded documents (e.g., medical bills, reports)."
-
-    elif option.lower() == "back":
-        st.session_state.mode = None
+        reply = "You can now ask questions about your uploaded documents (medical bills, reports, etc.)."
+    elif option.lower() == "reset":
         st.session_state.policy_verified = False
         st.session_state.policy_id = None
         st.session_state.doc_mode = False
-        reply = st.session_state.messages[0]["content"]
+        reply = st.session_state.claim_messages[0]["content"]
     else:
-        reply = "⚠️ Invalid selection. Please choose 1, 2, 3 or type `back`."
-
+        reply = "Invalid selection. Please choose 1, 2, 3, or type 'reset'."
     return reply
 
-def handle_general_query(query):
-    result = query_handler.get_response(query)
-    return result
-
 def handle_uploaded_doc_query(user_input):
-    response = doc_query_handler.query(policy_id=st.session_state.policy_id, question=user_input)
-    return response
+    return doc_query_handler.query(policy_id=st.session_state.policy_id, question=user_input)
 
-# === UI Title ===
-st.title("🤖 Claim Approver Assistant")
+def handle_general_query(query):
+    return query_handler.get_response(query)
 
-# === Chat History Display ===
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# === Tabs ===
+tab1, tab2 = st.tabs(["Claim Assistant", "General Questions"])
 
-# === Chat Input Handler ===
-if user_input := st.chat_input("Type your message here..."):
-    user_input = user_input.strip()
-    
-    # Add user message to chat
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
+# === CLAIM TAB ===
+with tab1:
+    st.markdown("### Claim Approval & Policy Support")
+    chat_container = st.container()
 
-    # Handle exit
-    if user_input.lower() == "exit":
-        st.session_state.clear()
-        st.success("👋 Session ended. Thank you for using Claim Approver Assistant.")
-        st.stop()
+    user_input = st.chat_input("Enter your message...")
+    if user_input:
+        st.session_state.claim_messages.append({"role": "user", "content": user_input})
 
-    # Process user input and generate response
-    assistant_response = None
-    
-    if st.session_state.doc_mode:
-        if user_input.lower() == "back":
-            st.session_state.doc_mode = False
-            assistant_response = show_main_options()
-        else:
-            assistant_response = handle_uploaded_doc_query(user_input)
-            # Add additional message for doc mode
-            st.session_state.messages.append({"role": "assistant", "content": assistant_response})
-            with st.chat_message("assistant"):
-                st.markdown(assistant_response)
-            assistant_response = "_Ask another question or type `back`._"
-
-    elif st.session_state.mode is None:
-        if not st.session_state.policy_verified:
+        if st.session_state.doc_mode:
+            if user_input.lower() == "back":
+                st.session_state.doc_mode = False
+                response = show_main_options()
+            else:
+                response = handle_uploaded_doc_query(user_input)
+        elif not st.session_state.policy_verified:
             result = get_policy_and_claim_summary(user_input)
             if isinstance(result, dict) and "error" in result:
-                assistant_response = f"❌ {result['error']}. Please try again."
+                response = f"**Error:** {result['error']}. Please verify your policy number and try again."
             else:
                 st.session_state.policy_verified = True
                 st.session_state.policy_id = user_input
-                # Add verification message
-                st.session_state.messages.append({"role": "assistant", "content": f"✅ Policy `{user_input}` verified."})
-                with st.chat_message("assistant"):
-                    st.markdown(f"✅ Policy `{user_input}` verified.")
-                assistant_response = show_main_options()
+                st.session_state.claim_messages.append({"role": "assistant", "content": f"**Policy `{user_input}` verified successfully.**"})
+                response = show_main_options()
         else:
-            assistant_response = handle_policy_menu(user_input)
+            response = handle_policy_menu(user_input)
 
-    elif st.session_state.mode == "policy":
-        assistant_response = handle_policy_menu(user_input)
+        st.session_state.claim_messages.append({"role": "assistant", "content": response})
 
-    elif st.session_state.mode == "general":
-        if user_input.lower() == "back":
-            st.session_state.mode = None
-            assistant_response = st.session_state.messages[0]["content"]
-        else:
-            assistant_response = handle_general_query(user_input)
-            # Add additional message for general mode
-            st.session_state.messages.append({"role": "assistant", "content": assistant_response})
-            with st.chat_message("assistant"):
-                st.markdown(assistant_response)
-            assistant_response = "_(Type 'back' to return to main menu.)_"
+    with chat_container:
+        for msg in st.session_state.claim_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
 
-    # Add assistant response to chat
-    if assistant_response:
-        st.session_state.messages.append({"role": "assistant", "content": assistant_response})
-        with st.chat_message("assistant"):
-            st.markdown(assistant_response)
+# === GENERAL TAB ===
+with tab2:
+    st.markdown("### General Policy Information & Comparisons")
+    chat_container = st.container()
 
-# # === Optional: Policy Comparison Q&A ===
-# with st.expander("🛠 General Policy Comparison", expanded=False):
-#     general_query = st.text_input("Ask about policies:", key="general_query")
-#     if general_query:
-#         general_response = query_handler.get_response(general_query)
-#         st.markdown(f"**Response:**\n\n{general_response}")
+    general_input = st.chat_input("Ask about policies, coverage, or comparisons...", key="general_input")
+    if general_input:
+        st.session_state.general_messages.append({"role": "user", "content": general_input})
+        if general_input.lower() == "reset":
+            st.session_state.general_messages = [{"role": "assistant", "content": "Chat reset. How can I help you with general policy questions?"}]
+            st.rerun()
+        try:
+            response = handle_general_query(general_input)
+        except:
+            response = "I apologize, but I'm unable to process your request at the moment. Please try again."
+        st.session_state.general_messages.append({"role": "assistant", "content": response})
+
+    with chat_container:
+        for msg in st.session_state.general_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+# === Footer ===
+st.markdown("---")
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
+    if st.button("Clear All Chats", use_container_width=True):
+        st.session_state.claim_messages = [{"role": "assistant", "content": "Welcome to the Claim Assistant.\nPlease enter your policy number to begin."}]
+        st.session_state.general_messages = [{"role": "assistant", "content": "Welcome to General Policy Support. How can I help you today?"}]
+        st.session_state.policy_verified = False
+        st.session_state.policy_id = None
+        st.session_state.doc_mode = False
+        st.rerun()
