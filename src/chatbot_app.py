@@ -99,7 +99,7 @@ st.markdown("""
 # === Session Initialization ===
 def initialize_session_state():
     if "claim_messages" not in st.session_state:
-        st.session_state.claim_messages = [{"role": "assistant", "content": "Welcome to the Claim Assistant.\nPlease enter the policy number to begin."}]
+        st.session_state.claim_messages = [{"role": "assistant", "content": "Welcome to the Claim Assistant.\nPlease enter the user policy number to begin."}]
     if "general_messages" not in st.session_state:
         st.session_state.general_messages = [{"role": "assistant", "content": "Welcome to General Policy Support. How can I help you today?"}]
     if "policy_verified" not in st.session_state:
@@ -165,6 +165,7 @@ def handle_policy_menu(option):
 def handle_uploaded_doc_query(user_input):
     return doc_query_handler.query(policy_id=st.session_state.policy_id, question=user_input)
 
+
 def handle_general_query(query):
     return query_handler.get_response(query)
 
@@ -185,11 +186,13 @@ with tab1:
                 st.session_state.doc_mode = False
                 response = show_main_options()
             else:
-                response = handle_uploaded_doc_query(user_input)
+                response = handle_uploaded_doc_query(user_input)   #chroma response
+                #from src.utils.conversation import Response
+                #response= Response(user_input).get_response() #mongo response
         elif not st.session_state.policy_verified:
             result = get_policy_and_claim_summary(user_input)
             if isinstance(result, dict) and "error" in result:
-                response = f"**Error:** {result['error']}. Please verify your policy number and try again."
+                response = f"**Error:** {result['error']}. Please verify the policy number and try again."
             else:
                 st.session_state.policy_verified = True
                 st.session_state.policy_id = user_input
@@ -207,10 +210,10 @@ with tab1:
 
 # === GENERAL TAB ===
 with tab2:
-    st.markdown("### General Policy Information & Comparisons")
+    st.markdown("### General Policy Information & Support")
     chat_container = st.container()
 
-    general_input = st.chat_input("Ask about policies, coverage, or comparisons...", key="general_input")
+    general_input = st.chat_input("Ask about policies, coverage etc", key="general_input")
     if general_input:
         st.session_state.general_messages.append({"role": "user", "content": general_input})
         if general_input.lower() == "reset":
@@ -232,7 +235,7 @@ st.markdown("---")
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
     if st.button("Clear All Chats", use_container_width=True):
-        st.session_state.claim_messages = [{"role": "assistant", "content": "Welcome to the Claim Assistant.\nPlease enter your policy number to begin."}]
+        st.session_state.claim_messages = [{"role": "assistant", "content": "Welcome to the Claim Assistant.\nPlease enter the user policy number to begin."}]
         st.session_state.general_messages = [{"role": "assistant", "content": "Welcome to General Policy Support. How can I help you today?"}]
         st.session_state.policy_verified = False
         st.session_state.policy_id = None
