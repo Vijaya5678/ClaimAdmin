@@ -4,9 +4,10 @@ import os
 from langchain_community.vectorstores import Chroma
 from langchain.embeddings import HuggingFaceEmbeddings
 import google.generativeai as genai
+from dotenv import load_dotenv
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+gemini_model = genai.GenerativeModel("gemini-2.5-flash")
 
 class PolicyDocQuery:
     def __init__(self, persist_base="chroma_docs"):
@@ -32,7 +33,7 @@ class PolicyDocQuery:
 
         context = "\n\n".join([doc.page_content for doc in docs])
         prompt = (
-            "You are a helpful assistant. Based on the following documents, answer the user's question:\n\n"
+            "You are a helpful assistant. Based on the following documents, answer the user's question and provide answer with proper formatting:\n\n"
             f"{context}\n\n"
             f"Question: {question}\n"
             "Answer:"
