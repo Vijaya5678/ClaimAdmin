@@ -1,8 +1,1 @@
-streamlit
-pymongo
-langchain
-langchain-community
-google-generativeai
-sentence-transformers
-chromadb
-pandas
+mcp[cli]

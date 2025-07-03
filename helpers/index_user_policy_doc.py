@@ -39,6 +39,6 @@ def index_documents_for_policy(policy_id, docs_path="data/documents", persist_ba
 
 # EXAMPLE USAGE
 if __name__ == "__main__":
-    policy_id = "IND-2025-0004"
+    policy_id = "IND-2025-0001"
     result = index_documents_for_policy(policy_id)
     print(result)

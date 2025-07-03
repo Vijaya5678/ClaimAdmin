@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 # Set Gemini API key from environment variable
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+gemini_model = genai.GenerativeModel("gemini-2.5-flash")
 
 
 class PolicyQueryHandler:
@@ -55,7 +55,7 @@ class PolicyQueryHandler:
             [f"Context {i+1}: {doc.page_content}" for i, doc in enumerate(contexts)]
         )
         prompt = (
-            "You are a helpful assistant. Use the following policy document excerpts to answer the question:\n\n"
+            "You are a helpful assistant. Use the following policy document excerpts to answer the question with proper formatting:\n\n"
             f"{context_text}\n\n"
             f"Question: {query}\n"
             "Answer:"
