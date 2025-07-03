@@ -13,8 +13,8 @@ import google.generativeai as genai
 
 from helpers.get_policy_and_claim_summary import get_policy_and_claim_summary
 from helpers.query_handler import PolicyQueryHandler
-from query_user_policy_doc import PolicyDocQuery
-
+from helpers.query_user_policy_doc import PolicyDocQuery
+import google.generativeai as genai
 # === Configure Gemini ===
 os.environ["GEMINI_API_KEY"] = "AIzaSyBKMV8TARxNEOnTvA4sviV1wEb0uZA9pv4"
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
