@@ -1,30 +1,41 @@
-from fastapi import FastAPI, HTTPException
 import sqlite3
-from typing import Optional
+import re
+import pandas as pd
+from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route, Mount
 
-app = FastAPI()
+# === Load hospital data (same as in hospital_data.db) for demo ===
+conn = sqlite3.connect("hospital_data.db")
+df = pd.read_sql_query("SELECT * FROM hospital_data", conn)
+conn.close()
 
-DB_PATH = "hospital_data.db"
+# === Create MCP app ===
+mcp = FastMCP("HospitalDB")
 
-def get_hospital_data(incident_id: str) -> Optional[dict]:
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT incident_id, policy_num, admitted_date, discharged_date, bill FROM hospital_data WHERE incident_id = ?", (incident_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return {
-            "incident_id": row[0],
-            "policy_num": row[1],
-            "admitted_date": row[2],
-            "discharged_date": row[3],
-            "bill": row[4],
-        }
-    return None
+# === MCP Resource: Get claim via incident ID ===
+@mcp.resource("incident://{incident_id}")
+def get_hospital_claim(incident_id: str) -> dict:
+    row = df[df["incident_id"] == incident_id]
+    return row.iloc[0].to_dict() if not row.empty else {"error": "Incident not found"}
 
-@app.get("/hospital/{incident_id}")
-async def hospital_info(incident_id: str):
-    data = get_hospital_data(incident_id)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Hospital data not found")
-    return data
+# === Optional MCP Tool: mark reviewed, approve, etc. ===
+@mcp.tool("approve_hospital_claim")
+def approve_hospital_claim(incident_id: str, approve: bool = True) -> dict:
+    row = df[df["incident_id"] == incident_id]
+    return {"status": "approved" if approve else "rejected", "incident": incident_id} if not row.empty else {"status": "error", "message": "Not found"}
+
+# === Direct HTTP GET endpoint (non-MCP) ===
+async def http_get_incident(request):
+    incident_id = request.path_params["incident_id"]
+    row = df[df["incident_id"] == incident_id]
+    if not row.empty:
+        return JSONResponse(row.iloc[0].to_dict())
+    return JSONResponse({"error": "Incident not found"}, status_code=404)
+
+# === Compose full app ===
+app = Starlette(routes=[
+    Route("/incident/{incident_id}", http_get_incident),
+    Mount("/mcp", app=mcp.sse_app)
+])
