@@ -2,25 +2,22 @@ import os
 import asyncio
 import sqlite3
 import re
-
 import google.generativeai as genai
 from smolagents import CodeAgent, InferenceClientModel
 from smolagents.tools import Tool
 
-# === Gemini Configuration ===
-os.environ["GEMINI_API_KEY"] = "AIzaSyBKMV8TARxNEOnTvA4sviV1wEb0uZA9pv4"
+# === Configure Gemini API key ===
+os.environ["GEMINI_API_KEY"] = "AIzaSyBKMV8TARxNEOnTvA4sviV1wEb0uZA9pv4"  # Replace with your actual key
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-
 GEMINI_MODEL = "models/gemini-1.5-flash"
 
-# === Query hospital data from SQLite ===
+# === SQLite DB Access ===
 def get_hospital_data(incident_id: str):
-    conn = sqlite3.connect("hospital_data.db")
+    conn = sqlite3.connect('hospital_data.db')
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM hospital_data WHERE incident_id=?", (incident_id,))
     row = cursor.fetchone()
     conn.close()
-
     if row:
         return {
             "incident_id": row[0],
@@ -28,15 +25,18 @@ def get_hospital_data(incident_id: str):
             "policy_num": row[2],
             "admitted": row[3],
             "discharged": row[4],
-            "bill": row[5],
+            "bill": row[5]
         }
     return None
 
-# === Tool for querying hospital data ===
+# === Define Tool for the Agent ===
 class HospitalDataTool(Tool):
     name = "HospitalDataTool"
-    description = "Fetch hospital billing data by incident ID. Input must contain the incident ID like IND-2025-0004."
-    inputs = ["query"]
+    description = "Fetches hospital bill info using incident ID like IND-2025-0004."
+    inputs = {
+        "query": "User question containing an incident ID"
+    }
+    output_type = "string"
 
     async def __call__(self, query: str):
         match = re.search(r"(IND-\d{4}-\d{4})", query)
@@ -49,7 +49,7 @@ class HospitalDataTool(Tool):
             return f"No data found for incident {incident_id}."
         return f"Bill amount for {incident_id} is ₹{data['bill']}."
 
-# === Main Agent Logic ===
+# === Main Execution ===
 async def main():
     inference_model = InferenceClientModel(model=GEMINI_MODEL)
     tools = [HospitalDataTool()]
