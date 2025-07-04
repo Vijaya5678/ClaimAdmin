@@ -3,9 +3,9 @@
 from smolagents import tool, CodeAgent, InferenceClientModel
 import sqlite3
 from typing import Optional
-
+import os
 class HospitalAdminAssistant:
-    def __init__(self, db_path: str = "hospital_data.db", model_id: str = "meta-llama/Meta-Llama-3-8B-Instruct", hf_token: Optional[str] = None):
+    def __init__(self, db_path: str = (os.path.join(os.path.dirname(__file__), "hospital_data.db")), model_id: str = "meta-llama/Meta-Llama-3-8B-Instruct", hf_token: Optional[str] = None):
         self.db_path = db_path
         self.sql_tool = self._build_sql_tool()
         self.agent = CodeAgent(
@@ -56,7 +56,7 @@ class HospitalAdminAssistant:
 
 # ✅ Main usage (can be a test or entry point)
 if __name__ == "__main__":
-    HF_TOKEN = "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"  # Replace with env var or config
+    HF_TOKEN = "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"  # Replace with env var or config
     assistant = HospitalAdminAssistant(hf_token=HF_TOKEN)
 
     query = "What is the bill amount and admission date for IND-2025-0004?"

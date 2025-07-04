@@ -5,6 +5,8 @@ import google.generativeai as genai
 import requests
 import subprocess
 import time
+import threading
+from contextlib import contextmanager
 
 # === Path Setup ===
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "helpers"))
@@ -27,7 +29,6 @@ def is_server_running(port):
 def start_hp_server():
     """Start the HP server in background"""
     if 'hp_server_port' not in st.session_state:
-        # Find free port
         port = os.getenv("MCP_PORT")
         if port is None:
             st.error("Could not find a the port for HP server")
@@ -35,23 +36,10 @@ def start_hp_server():
         
         st.session_state.hp_server_port = port
         
-        # # Check if server is already running
-        # if is_server_running(port):
-        #     st.success(f"HP Server already running on port {port}")
-        #     # Remove the message after 3 seconds
-        #     time.sleep(3)
-        #     success_placeholder.empty()
-            
-        #     return port
-        
-        # Start server in background
         try:
-            # Get the path to hp_server.py
-            # Get the path to SmolAgent directory
             smol_agent_path = os.path.join(os.path.dirname(__file__), "..", "SmolAgent")
             smol_agent_path = os.path.abspath(smol_agent_path)
 
-            # Start uvicorn server
             cmd = [
                 sys.executable, "-m", "uvicorn", 
                 "hp_server:app", 
@@ -60,7 +48,6 @@ def start_hp_server():
                 "--port", str(port)
             ]
 
-            # Start process in background with SmolAgent as working directory
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -69,18 +56,9 @@ def start_hp_server():
             )
             
             st.session_state.hp_server_process = process
-            
-            # Wait a moment for server to start
             time.sleep(3)
             
-            # Check if server started successfully
             if is_server_running(port):
-                success_placeholder = st.empty()
-                success_placeholder.success(f"HP Server started successfully on port {port}")
-                
-                # Remove the message after 3 seconds
-                time.sleep(3)
-                success_placeholder.empty()
                 return port
             else:
                 st.error("Failed to start HP Server")
@@ -97,21 +75,30 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # === Initialize HP Server ===
 if 'server_initialized' not in st.session_state:
-    with st.spinner("Starting HP Server..."):
-        server_port = start_hp_server()
-        if server_port:
-            st.session_state.server_initialized = True
-            st.session_state.hp_server_url = f"http://127.0.0.1:{server_port}"
-            
-        else:
-            st.error("Failed to initialize HP Server")
+    server_port = start_hp_server()
+    if server_port:
+        st.session_state.server_initialized = True
+        st.session_state.hp_server_url = f"http://127.0.0.1:{server_port}"
+    else:
+        st.error("Failed to initialize HP Server")
 
 # === Handlers ===
-query_handler = PolicyQueryHandler()
-doc_query_handler = PolicyDocQuery()
+@st.cache_resource
+def get_handlers():
+    """Cache the handlers to avoid recreation"""
+    query_handler = PolicyQueryHandler()
+    doc_query_handler = PolicyDocQuery()
+    #hospital_assistant = HospitalClaimAssistant(gemini_api_key=os.getenv("GEMINI_API_KEY"))
 
-# === Initialize Hospital Claim Assistant ===
-hospital_assistant = HospitalClaimAssistant(gemini_api_key=os.getenv("GEMINI_API_KEY"))
+    from SmolAgent.hospitalclaimassistant_v2 import HospitalAdminAssistant
+    HF_TOKEN = "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"  # Replace with env var or config
+    hospital_assistant = HospitalAdminAssistant(hf_token=HF_TOKEN)
+
+
+
+    return query_handler, doc_query_handler, hospital_assistant
+    
+query_handler, doc_query_handler, hospital_assistant = get_handlers()
 
 # === Streamlit Page Config ===
 st.set_page_config(
@@ -120,15 +107,45 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# === Custom Styles with fix for top padding removal ===
+# === Enhanced Custom Styles to Fix Overlay Issues ===
 st.markdown("""
     <style>
-        /* Remove default Streamlit top padding to push content to top */
+        /* Fix for overlay and duplication issues */
         .block-container {
             padding-top: 0rem !important;
+            background: #fafafa !important;
+            opacity: 1 !important;
+            z-index: 999 !important;
         }
-
-        .stApp { background-color: #fafafa; }
+        
+        /* Force proper stacking and prevent overlay */
+        .stApp {
+            background-color: #fafafa !important;
+            opacity: 1 !important;
+            z-index: 1 !important;
+        }
+        
+        /* Hide loading spinner that causes overlay */
+        .stSpinner {
+            display: none !important;
+        }
+        
+        /* Prevent ghost elements */
+        .stApp > div {
+            position: relative !important;
+            z-index: 1 !important;
+        }
+        
+        /* Fix for transparent loading overlay */
+        .stApp::before {
+            content: none !important;
+        }
+        
+        /* Ensure proper rendering */
+        .main .block-container {
+            background-color: #fafafa !important;
+            opacity: 1 !important;
+        }
 
         .main-header {
             background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
@@ -138,6 +155,8 @@ st.markdown("""
             margin-top: 0rem;
             margin-bottom: 1.5rem;
             text-align: center;
+            position: relative;
+            z-index: 10;
         }
 
         .main-header h1 {
@@ -152,18 +171,6 @@ st.markdown("""
             opacity: 0.9;
         }
 
-        .stChatMessage.user::before {
-            content: url('https://cdn-icons-png.flaticon.com/512/847/847969.png');
-            width: 32px; height: 32px; display: inline-block; margin-right: 0.75rem;
-            vertical-align: middle;
-        }
-
-        .stChatMessage.assistant::before {
-            content: url('https://cdn-icons-png.flaticon.com/512/4712/4712109.png');
-            width: 32px; height: 32px; display: inline-block; margin-right: 0.75rem;
-            vertical-align: middle;
-        }
-
         .stChatMessage {
             border-radius: 12px;
             margin: 1rem 0;
@@ -172,6 +179,8 @@ st.markdown("""
             align-items: flex-start;
             box-shadow: 0 2px 6px rgba(0,0,0,0.05);
             max-width: 800px;
+            position: relative;
+            z-index: 5;
         }
 
         .stChatMessage.user {
@@ -186,7 +195,36 @@ st.markdown("""
             margin-right: auto;
         }
 
+        /* Custom loading indicator */
+        .loading-indicator {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #666;
+            background: white;
+            border-radius: 10px;
+            margin: 10px 0;
+            border: 1px solid #e5e7eb;
+        }
+
+        /* Tab styling */
+        .stTabs {
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            margin: 10px 0;
+            position: relative;
+            z-index: 5;
+        }
+
+        /* Hide problematic elements */
         #MainMenu, footer, header { visibility: hidden; }
+        
+        /* Ensure chat input is visible */
+        .stChatInput {
+            position: relative;
+            z-index: 10;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -204,6 +242,14 @@ def initialize_session_state():
         st.session_state.policy_id = None
     if "doc_mode" not in st.session_state:
         st.session_state.doc_mode = False
+    
+    # Processing flags for each tab
+    if "processing_claim" not in st.session_state:
+        st.session_state.processing_claim = False
+    if "processing_general" not in st.session_state:
+        st.session_state.processing_general = False
+    if "processing_hospital" not in st.session_state:
+        st.session_state.processing_hospital = False
 
 initialize_session_state()
 
@@ -214,15 +260,6 @@ st.markdown("""
         <p>Streamlining Insurance Claim Approvals</p>
     </div>
 """, unsafe_allow_html=True)
-
-# === Server Status Display ===
-# if 'hp_server_port' in st.session_state:
-#     col1, col2, col3 = st.columns([1, 2, 1])
-#     with col2:
-#         if is_server_running(st.session_state.hp_server_port):
-#             st.success(f"🟢 HP Server running on port {st.session_state.hp_server_port}")
-#         else:
-#             st.error(f"🔴 HP Server not responding on port {st.session_state.hp_server_port}")
 
 # === Utility Functions ===
 def show_main_options():
@@ -250,7 +287,6 @@ def handle_policy_menu(option):
             for claim in claims_summary["claims"]:
                 reply += f"| {claim['claim_id']} | {claim['claim_status']} | ₹{claim['amount_paid']:,} |\n"
             reply += "\n"
-
         else:
             reply += "#### Claim History\n\nNo claims found for this policy."
     elif option == "2":
@@ -268,98 +304,156 @@ def handle_policy_menu(option):
     return reply
 
 def handle_uploaded_doc_query(user_input):
-    return doc_query_handler.query(policy_id=st.session_state.policy_id, question=user_input)
+    try:
+        return doc_query_handler.query(policy_id=st.session_state.policy_id, question=user_input)
+    except Exception as e:
+        return f"I apologize, but I encountered an error: {str(e)}"
 
 def handle_general_query(query):
-    return query_handler.get_response(query)
+    try:
+        return query_handler.get_response(query)
+    except Exception as e:
+        return f"I apologize, but I encountered an error: {str(e)}"
 
 def handle_hospital_assistant_query(query):
     try:
-        return hospital_assistant.process_query(query)
+        #return hospital_assistant.process_query(query)
+        return hospital_assistant.ask(query)
     except Exception as e:
         return f"I apologize, but I encountered an error processing your request: {str(e)}"
 
-# === Tabs ===
+@contextmanager
+def processing_context(processing_key):
+    """Context manager to handle processing state"""
+    try:
+        st.session_state[processing_key] = True
+        yield
+    finally:
+        st.session_state[processing_key] = False
 
+# === Tabs ===
 tab1, tab2, tab3 = st.tabs(["Claim Assistant", "General Questions", "Hospital Assistant"])
 
 # === CLAIM TAB ===
 with tab1:
     st.markdown("### Claim Approval & Policy Support")
-    chat_container = st.container()
-
-    user_input = st.chat_input("Enter your message...")
+    
+    # Display all messages first
+    for msg in st.session_state.claim_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    
+    # Show loading if processing
+    if st.session_state.processing_claim:
+        with st.chat_message("assistant"):
+            st.markdown('<div class="loading-indicator">🔄 Processing your request...</div>', unsafe_allow_html=True)
+    
+    # Handle user input
+    user_input = st.chat_input("Enter your message...", key="claim_input", disabled=st.session_state.processing_claim)
+    
     if user_input:
+        # Add user message immediately
         st.session_state.claim_messages.append({"role": "user", "content": user_input})
-
-        if st.session_state.doc_mode:
-            if user_input.lower() == "back":
-                st.session_state.doc_mode = False
-                response = show_main_options()
-            else:
-                response = handle_uploaded_doc_query(user_input)   #chroma response
-                #from src.utils.conversation import Response
-                #response= Response(user_input).get_response() #mongo response
-        elif not st.session_state.policy_verified:
-            result = get_policy_and_claim_summary(user_input)
-            if isinstance(result, dict) and "error" in result:
-                response = f"**Error:** {result['error']}. Please verify the policy number and try again."
-            else:
-                st.session_state.policy_verified = True
-                st.session_state.policy_id = user_input
-                st.session_state.claim_messages.append({"role": "assistant", "content": f"**Policy `{user_input}` verified successfully.**"})
-                response = show_main_options()
-        else:
-            response = handle_policy_menu(user_input)
-
-        st.session_state.claim_messages.append({"role": "assistant", "content": response})
-
-    with chat_container:
-        for msg in st.session_state.claim_messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+        
+        # Process in context manager
+        with processing_context("processing_claim"):
+            try:
+                if st.session_state.doc_mode:
+                    if user_input.lower() == "back":
+                        st.session_state.doc_mode = False
+                        response = show_main_options()
+                    else:
+                        response = handle_uploaded_doc_query(user_input)
+                elif not st.session_state.policy_verified:
+                    result = get_policy_and_claim_summary(user_input)
+                    if isinstance(result, dict) and "error" in result:
+                        response = f"**Error:** {result['error']}. Please verify the policy number and try again."
+                    else:
+                        st.session_state.policy_verified = True
+                        st.session_state.policy_id = user_input
+                        st.session_state.claim_messages.append({"role": "assistant", "content": f"**Policy `{user_input}` verified successfully.**"})
+                        response = show_main_options()
+                else:
+                    response = handle_policy_menu(user_input)
+                
+                st.session_state.claim_messages.append({"role": "assistant", "content": response})
+                
+            except Exception as e:
+                st.session_state.claim_messages.append({"role": "assistant", "content": f"An error occurred: {str(e)}"})
+        
+        st.rerun()
 
 # === GENERAL TAB ===
 with tab2:
     st.markdown("### General Policy Information & Support")
-    chat_container = st.container()
-
-    general_input = st.chat_input("Ask about policies, coverage etc", key="general_input")
+    
+    # Display all messages first
+    for msg in st.session_state.general_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    
+    # Show loading if processing
+    if st.session_state.processing_general:
+        with st.chat_message("assistant"):
+            st.markdown('<div class="loading-indicator">🔄 Processing your request...</div>', unsafe_allow_html=True)
+    
+    # Handle user input
+    general_input = st.chat_input("Ask about policies, coverage etc", key="general_input", disabled=st.session_state.processing_general)
+    
     if general_input:
+        # Add user message immediately
         st.session_state.general_messages.append({"role": "user", "content": general_input})
+        
+        # Handle reset separately
         if general_input.lower() == "reset":
             st.session_state.general_messages = [{"role": "assistant", "content": "Chat reset. How can I help you with general policy questions?"}]
             st.rerun()
-        try:
-            response = handle_general_query(general_input)
-        except:
-            response = "I apologize, but I'm unable to process your request at the moment. Please try again."
-        st.session_state.general_messages.append({"role": "assistant", "content": response})
-
-    with chat_container:
-        for msg in st.session_state.general_messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+        else:
+            # Process in context manager
+            with processing_context("processing_general"):
+                try:
+                    response = handle_general_query(general_input)
+                    st.session_state.general_messages.append({"role": "assistant", "content": response})
+                except Exception as e:
+                    st.session_state.general_messages.append({"role": "assistant", "content": f"An error occurred: {str(e)}"})
+            
+            st.rerun()
 
 # === HOSPITAL ASSISTANT TAB ===
 with tab3:
     st.markdown("### Hospital Assistant")
-    chat_container = st.container()
-
-    hospital_assistant_input = st.chat_input("Ask about hospital incidents (e.g., 'What is the bill amount for Policy number?')", key="hospital_assistant_input")
-    if hospital_assistant_input:
-        st.session_state.hospital_assistant_messages.append({"role": "user", "content": hospital_assistant_input})
-        if hospital_assistant_input.lower() == "reset":
+    
+    # Display all messages first
+    for msg in st.session_state.hospital_assistant_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    
+    # Show loading if processing
+    if st.session_state.processing_hospital:
+        with st.chat_message("assistant"):
+            st.markdown('<div class="loading-indicator">🔄 Processing your request...</div>', unsafe_allow_html=True)
+    
+    # Handle user input
+    hospital_input = st.chat_input("Ask about hospital incidents", key="hospital_input", disabled=st.session_state.processing_hospital)
+    
+    if hospital_input:
+        # Add user message immediately
+        st.session_state.hospital_assistant_messages.append({"role": "user", "content": hospital_input})
+        
+        # Handle reset separately
+        if hospital_input.lower() == "reset":
             st.session_state.hospital_assistant_messages = [{"role": "assistant", "content": "Chat reset. Feel free to ask anything about hospital claim information."}]
             st.rerun()
-        
-        response = handle_hospital_assistant_query(hospital_assistant_input)
-        st.session_state.hospital_assistant_messages.append({"role": "assistant", "content": response})
-
-    with chat_container:
-        for msg in st.session_state.hospital_assistant_messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+        else:
+            # Process in context manager
+            with processing_context("processing_hospital"):
+                try:
+                    response = handle_hospital_assistant_query(hospital_input)
+                    st.session_state.hospital_assistant_messages.append({"role": "assistant", "content": response})
+                except Exception as e:
+                    st.session_state.hospital_assistant_messages.append({"role": "assistant", "content": f"An error occurred: {str(e)}"})
+            
+            st.rerun()
 
 # === Footer ===
 st.markdown("---")
@@ -372,6 +466,9 @@ with col2:
         st.session_state.policy_verified = False
         st.session_state.policy_id = None
         st.session_state.doc_mode = False
+        st.session_state.processing_claim = False
+        st.session_state.processing_general = False
+        st.session_state.processing_hospital = False
         st.rerun()
 
 # === Cleanup on app shutdown ===
