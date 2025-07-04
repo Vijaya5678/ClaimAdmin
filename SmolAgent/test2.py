@@ -1,25 +1,15 @@
-import sqlite3
+import os
+import google.generativeai as genai
 
-def show_all_hospital_data():
-    conn = sqlite3.connect('hospital_data.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM hospital_data")
-    rows = cursor.fetchall()
-    conn.close()
+# Set your Gemini API key
+os.environ["GEMINI_API_KEY"] ="AIzaSyDqRhGpUFS2tl3FovaCS0cvSSKFwMQ2qO8"
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-    if not rows:
-        print("No data found.")
-    else:
-        print("Hospital Data:")
-        for row in rows:
-            print({
-                "incident_id": row[0],
-                "patient_name": row[1],
-                "policy_num": row[2],
-                "admitted": row[3],
-                "discharged": row[4],
-                "bill": row[5],
-            })
+# Create a model instance
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-if __name__ == "__main__":
-    show_all_hospital_data()
+# Generate content
+response = model.generate_content("hi")
+
+# Print the result
+print("Gemini says:", response.text)

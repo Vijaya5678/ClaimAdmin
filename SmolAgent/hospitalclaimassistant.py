@@ -1,7 +1,6 @@
 import os
 import re
 import requests
-import json
 
 from smolagents import CodeAgent, Tool
 from smolagents.models import ChatMessage
@@ -67,15 +66,15 @@ class HospitalClaimAssistant:
             except Exception as e:
                 return f"Error retrieving data for {incident_id}: {str(e)}"
 
-            return json.dumps(data, indent=2)  # Pretty JSON string
+            return str(data)
 
     def process_query(self, user_question: str) -> str:
         system_instruction = (
             "You are a hospital claim assistant. Use the tool to get incident data. "
-            "From the tool output, extract only what the user asked for (e.g. bill amount, patient ID, date). "
+            "From the tool output, extract only what the user asked for (e.g. bill amount or date). "
             "Be concise. Don’t add explanations. Format currency properly (₹). "
             "Do not guess or add any extra explanation unless the data is missing. "
-            "Return like 'The bill is ₹15000. Patient ID is P1234.' etc."
+            "Return like 'The bill is ₹15000' etc."
         )
 
         formatted_query = f"{system_instruction}\n\nUser query: {user_question}"
@@ -85,13 +84,15 @@ class HospitalClaimAssistant:
 
         # Step 2: Ask Gemini to generate final answer from tool output
         followup_prompt = f"""
-You are a helpful assistant. Below is hospital incident data (may include multiple records):
+You are an assistant. Here is the incident data:
 
 {tool_output}
 
-Extract the following: patient's name, patient_id, admission date, discharge date, and bill amount — ONLY based on what was asked.
-
-Do not include explanations. Write as if you're replying in a chat.
+Extract the patient's name, admission date, discharge date, and bill amount. Focus on what the user asked.
+do not return anything other than data no explaination.
+give response like a chat wndow, imagine someone asked so how you should respond.
+do not say that there was error etc just return the value from the response.
+do not add like what agent response. just return what data you extracted.
 Now, based on the above data, answer the following user query:
 "{user_question}"
 """
@@ -104,6 +105,6 @@ Now, based on the above data, answer the following user query:
 # === Example usage ===
 if __name__ == "__main__":
     assistant = HospitalClaimAssistant(gemini_api_key="AIzaSyCBcfGzHVrp6O8cMxu3v-rPhaQsWFRaTvA")
-    query = "What is the bill amount, admission date, and patient ID for IND-2025-0004?"
+    query = "What is the bill amount and admission date for IND-2025-0004?"
     result = assistant.process_query(query)
     print("\n=== Final Answer ===\n", result)
