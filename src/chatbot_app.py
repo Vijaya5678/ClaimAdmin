@@ -1,23 +1,117 @@
 import os
 import sys
 import streamlit as st
-from pymongo import MongoClient
 import google.generativeai as genai
-from dotenv import load_dotenv
+import requests
+import subprocess
+import time
+
 # === Path Setup ===
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "helpers"))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from SmolAgent.hospitalclaimassistant import HospitalClaimAssistant
 from helpers.get_policy_and_claim_summary import get_policy_and_claim_summary
 from helpers.query_handler import PolicyQueryHandler
 from helpers.query_user_policy_doc import PolicyDocQuery
 
+# === Server Management Functions ===
+def is_server_running(port):
+    """Check if server is running on given port"""
+    try:
+        response = requests.get(f"http://127.0.0.1:{port}/incident/IND-2025-0004", timeout=2)
+        return True
+    except:
+        return False
+
+def start_hp_server():
+    """Start the HP server in background"""
+    if 'hp_server_port' not in st.session_state:
+        # Find free port
+        port = os.getenv("MCP_PORT")
+        if port is None:
+            st.error("Could not find a the port for HP server")
+            return None
+        
+        st.session_state.hp_server_port = port
+        
+        # # Check if server is already running
+        # if is_server_running(port):
+        #     st.success(f"HP Server already running on port {port}")
+        #     # Remove the message after 3 seconds
+        #     time.sleep(3)
+        #     success_placeholder.empty()
+            
+        #     return port
+        
+        # Start server in background
+        try:
+            # Get the path to hp_server.py
+            # Get the path to SmolAgent directory
+            smol_agent_path = os.path.join(os.path.dirname(__file__), "..", "SmolAgent")
+            smol_agent_path = os.path.abspath(smol_agent_path)
+
+            # Start uvicorn server
+            cmd = [
+                sys.executable, "-m", "uvicorn", 
+                "hp_server:app", 
+                "--reload", 
+                "--host", "127.0.0.1", 
+                "--port", str(port)
+            ]
+
+            # Start process in background with SmolAgent as working directory
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=smol_agent_path 
+            )
+            
+            st.session_state.hp_server_process = process
+            
+            # Wait a moment for server to start
+            time.sleep(3)
+            
+            # Check if server started successfully
+            if is_server_running(port):
+                success_placeholder = st.empty()
+                success_placeholder.success(f"HP Server started successfully on port {port}")
+                
+                # Remove the message after 3 seconds
+                time.sleep(3)
+                success_placeholder.empty()
+                return port
+            else:
+                st.error("Failed to start HP Server")
+                return None
+                
+        except Exception as e:
+            st.error(f"Error starting HP Server: {str(e)}")
+            return None
+    else:
+        return st.session_state.hp_server_port
+
 # === Configure Gemini API ===
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# === Initialize HP Server ===
+if 'server_initialized' not in st.session_state:
+    with st.spinner("Starting HP Server..."):
+        server_port = start_hp_server()
+        if server_port:
+            st.session_state.server_initialized = True
+            st.session_state.hp_server_url = f"http://127.0.0.1:{server_port}"
+            
+        else:
+            st.error("Failed to initialize HP Server")
 
 # === Handlers ===
 query_handler = PolicyQueryHandler()
 doc_query_handler = PolicyDocQuery()
+
+# === Initialize Hospital Claim Assistant ===
+hospital_assistant = HospitalClaimAssistant(gemini_api_key=os.getenv("GEMINI_API_KEY"))
 
 # === Streamlit Page Config ===
 st.set_page_config(
@@ -102,6 +196,8 @@ def initialize_session_state():
         st.session_state.claim_messages = [{"role": "assistant", "content": "Welcome to the Claim Assistant.\nPlease enter the user policy number to begin."}]
     if "general_messages" not in st.session_state:
         st.session_state.general_messages = [{"role": "assistant", "content": "Welcome to General Policy Support. How can I help you today?"}]
+    if "hospital_assistant_messages" not in st.session_state:
+        st.session_state.hospital_assistant_messages = [{"role": "assistant", "content": "Welcome to the Hospital Assistant. You can ask anything related to hospital claim information."}]
     if "policy_verified" not in st.session_state:
         st.session_state.policy_verified = False
     if "policy_id" not in st.session_state:
@@ -118,6 +214,15 @@ st.markdown("""
         <p>Streamlining Insurance Claim Approvals</p>
     </div>
 """, unsafe_allow_html=True)
+
+# === Server Status Display ===
+# if 'hp_server_port' in st.session_state:
+#     col1, col2, col3 = st.columns([1, 2, 1])
+#     with col2:
+#         if is_server_running(st.session_state.hp_server_port):
+#             st.success(f"🟢 HP Server running on port {st.session_state.hp_server_port}")
+#         else:
+#             st.error(f"🔴 HP Server not responding on port {st.session_state.hp_server_port}")
 
 # === Utility Functions ===
 def show_main_options():
@@ -165,12 +270,18 @@ def handle_policy_menu(option):
 def handle_uploaded_doc_query(user_input):
     return doc_query_handler.query(policy_id=st.session_state.policy_id, question=user_input)
 
-
 def handle_general_query(query):
     return query_handler.get_response(query)
 
+def handle_hospital_assistant_query(query):
+    try:
+        return hospital_assistant.process_query(query)
+    except Exception as e:
+        return f"I apologize, but I encountered an error processing your request: {str(e)}"
+
 # === Tabs ===
-tab1, tab2 = st.tabs(["Claim Assistant", "General Questions"])
+
+tab1, tab2, tab3 = st.tabs(["Claim Assistant", "General Questions", "Hospital Assistant"])
 
 # === CLAIM TAB ===
 with tab1:
@@ -230,6 +341,26 @@ with tab2:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
+# === HOSPITAL ASSISTANT TAB ===
+with tab3:
+    st.markdown("### Hospital Assistant")
+    chat_container = st.container()
+
+    hospital_assistant_input = st.chat_input("Ask about hospital incidents (e.g., 'What is the bill amount for Policy number?')", key="hospital_assistant_input")
+    if hospital_assistant_input:
+        st.session_state.hospital_assistant_messages.append({"role": "user", "content": hospital_assistant_input})
+        if hospital_assistant_input.lower() == "reset":
+            st.session_state.hospital_assistant_messages = [{"role": "assistant", "content": "Chat reset. Feel free to ask anything about hospital claim information."}]
+            st.rerun()
+        
+        response = handle_hospital_assistant_query(hospital_assistant_input)
+        st.session_state.hospital_assistant_messages.append({"role": "assistant", "content": response})
+
+    with chat_container:
+        for msg in st.session_state.hospital_assistant_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
 # === Footer ===
 st.markdown("---")
 col1, col2, col3 = st.columns([1, 1, 1])
@@ -237,7 +368,21 @@ with col2:
     if st.button("Clear All Chats", use_container_width=True):
         st.session_state.claim_messages = [{"role": "assistant", "content": "Welcome to the Claim Assistant.\nPlease enter the user policy number to begin."}]
         st.session_state.general_messages = [{"role": "assistant", "content": "Welcome to General Policy Support. How can I help you today?"}]
+        st.session_state.hospital_assistant_messages = [{"role": "assistant", "content": "Welcome to Hospital Assistant. You can ask anything related to hospital claim information"}]
         st.session_state.policy_verified = False
         st.session_state.policy_id = None
         st.session_state.doc_mode = False
         st.rerun()
+
+# === Cleanup on app shutdown ===
+import atexit
+
+def cleanup():
+    """Clean up background processes"""
+    if 'hp_server_process' in st.session_state:
+        try:
+            st.session_state.hp_server_process.terminate()
+        except:
+            pass
+
+atexit.register(cleanup)

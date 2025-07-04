@@ -1,7 +1,6 @@
 import os
 import re
 import requests
-
 from smolagents import CodeAgent, Tool
 from smolagents.models import ChatMessage
 import google.generativeai as genai
@@ -53,11 +52,12 @@ class HospitalClaimAssistant:
         output_type = "string"
 
         def forward(self, query: str) -> str:
+            mcp_port = os.getenv("MCP_PORT")
             match = re.search(r"(IND-\d{4}-\d{4})", query)
             if not match:
                 return "Please provide a valid incident ID like IND-2025-0004."
             incident_id = match.group(1)
-            url = f"http://127.0.0.1:9001/incident/{incident_id}"
+            url = f"http://127.0.0.1:{mcp_port}/incident/{incident_id}"
 
             try:
                 res = requests.get(url)
@@ -102,9 +102,9 @@ Now, based on the above data, answer the following user query:
         return answer
 
 
-# === Example usage ===
-if __name__ == "__main__":
-    assistant = HospitalClaimAssistant(gemini_api_key="AIzaSyCBcfGzHVrp6O8cMxu3v-rPhaQsWFRaTvA")
-    query = "What is the bill amount and admission date for IND-2025-0004?"
-    result = assistant.process_query(query)
-    print("\n=== Final Answer ===\n", result)
+# # === Example usage ===
+# if __name__ == "__main__":
+#     assistant = HospitalClaimAssistant(gemini_api_key=os.getenv("GEMINI_API_KEY"))
+#     query = "What is the bill amount and admission date for IND-2025-0004?"
+#     result = assistant.process_query(query)
+#     print("\n=== Final Answer ===\n", result)
